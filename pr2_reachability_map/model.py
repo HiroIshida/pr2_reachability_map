@@ -64,7 +64,7 @@ def get_model_path(arm: Literal["rarm", "larm"]):
     return model_path
 
 
-def load_model(arm: Literal["rarm", "larm"]) -> ReachabilityClassifier:
+def load_classifier(arm: Literal["rarm", "larm"]) -> ReachabilityClassifier:
     model = FCN(7, 1)
     model_path = get_model_path(arm)
     model.load_state_dict(torch.load(model_path, weights_only=True))
@@ -75,7 +75,7 @@ def load_model(arm: Literal["rarm", "larm"]) -> ReachabilityClassifier:
 
 
 if __name__ == "__main__":
-    model = load_model("rarm")
+    model = load_classifier("rarm")
     domain = Domain()
     p = np.array([0.6, -0.3, 0.8, 0.0, 0.0, 0.0])
     print(model.predict(p))
