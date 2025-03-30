@@ -68,6 +68,7 @@ def load_classifier(arm: Literal["rarm", "larm"]) -> ReachabilityClassifier:
     model = FCN(7, 1)
     model_path = get_model_path(arm)
     model.load_state_dict(torch.load(model_path, weights_only=True))
+    model = model.cpu()
     dummy_input = torch.randn(1, 7)
     traced = torch.jit.trace(model, (dummy_input,))
     optimized = torch.jit.optimize_for_inference(traced)
