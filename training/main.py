@@ -18,8 +18,10 @@ from pr2_reachability_map.model import FCN, Domain
 def create_dataset(is_rarm: bool, n_sample: int):
     if is_rarm:
         spec = PR2RarmSpec()
+        frame = "r_gripper_tool_frame"
     else:
         spec = PR2LarmSpec()
+        frame = "l_gripper_tool_frame"
     kin = spec.get_kin()
     torso_ids = kin.get_joint_ids(["torso_lift_joint"])
     kin.set_joint_positions(torso_ids, np.array([0.0]))
@@ -33,14 +35,14 @@ def create_dataset(is_rarm: bool, n_sample: int):
     for i in tqdm.tqdm(range(n_sample)):
         q = np.random.uniform(lb, ub)
         kin.set_joint_positions(ctrl_ids, q)
-        pose = kin.debug_get_link_pose("r_gripper_tool_frame")
+        pose = kin.debug_get_link_pose(frame)
         dataset[2 * i] = pose
         dataset[2 * i + 1, :3] = pose[:3]
         dataset[2 * i + 1, 3:] = pose[3:] * -1
     return dataset
 
 
-def create_dense_enough_dataset(is_rarm: bool, threshold: float = 0.2) -> np.ndarray:
+def create_dense_enough_dataset(is_rarm: bool, threshold: float) -> np.ndarray:
     n_sample_each = 1000_000
     n_sample_test = 10_000
     dist_threshold = threshold
@@ -51,6 +53,7 @@ def create_dense_enough_dataset(is_rarm: bool, threshold: float = 0.2) -> np.nda
         dataset = np.vstack((dataset, dataset_add))
         kdtree = KDTree(dataset)
         testset = create_dataset(is_rarm, n_sample_test)
+        print("testing..")
         dist, _ = kdtree.query(testset, k=1)
         dist_quantile = np.quantile(dist, 0.99)
         print(f"99% quantile of distance: {dist_quantile}")
@@ -62,17 +65,17 @@ def create_dense_enough_dataset(is_rarm: bool, threshold: float = 0.2) -> np.nda
 class ReachableScoreDataset(Dataset):
     def __init__(self, tree: KDTree):
         domain = Domain()
-        n_sample = 10_000
+        n_sample = 1000_000
         X = np.zeros((n_sample, 7), dtype=np.float32)
-        for i in tqdm.tqdm(range(n_sample), desc="Creating ReachableScoreDataset' X"):
+        Y = np.zeros((n_sample,), dtype=np.float32)
+        for i in tqdm.tqdm(range(n_sample), desc="Creating ReachableScoreDataset"):
             x = domain.sample_point()
             pos, rpy = x[:3], x[3:]
             quat_wxyz = rpy2quaternion(rpy[::-1])
             quat_xyzw = wxyz2xyzw(quat_wxyz)
             x = np.concatenate([pos, quat_xyzw])
             X[i] = x
-        Y, _ = tree.query(X, k=1)
-        print(Y)
+            Y[i], _ = tree.query(x, k=1)
         self.X = torch.from_numpy(X).float()
         self.Y = torch.from_numpy(Y).float()
 
@@ -88,7 +91,8 @@ if __name__ == "__main__":
     parser.add_argument("--arm", type=str, default="rarm", choices=["rarm", "larm"])
     args = parser.parse_args()
 
-    dataset = create_dense_enough_dataset(0.2)
+    print(f"Train model for {args.arm}...")
+    dataset = create_dense_enough_dataset(args.arm == "rarm", threshold=0.15)
     tree = KDTree(dataset)
     reach_dataset = ReachableScoreDataset(tree)
 
@@ -108,10 +112,10 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    num_epochs = 1000
+    num_epochs = 10000
     best_val_loss = float("inf")
     epoch_last_update = -1
-    early_stopping_patience = 50
+    early_stopping_patience = 100
 
     pretrained_dir = Path(pr2_reachability_map.__file__).parent / "pretrained"
     best_model_path = pretrained_dir / f"best_model_{args.arm}.pth"
@@ -158,7 +162,7 @@ if __name__ == "__main__":
 
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
-            best_model_state = copy.deepcopy(model.state_dict())
-            torch.save(best_model_state, best_model_path)
+            best_model = copy.deepcopy(model).to("cpu")
+            torch.save(best_model.state_dict(), best_model_path)
             print("Saved new best model.")
             epoch_last_update = epoch
