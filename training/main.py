@@ -1,6 +1,5 @@
 import argparse
 import copy
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -13,19 +12,7 @@ from skrobot.coordinates.math import rpy2quaternion, wxyz2xyzw
 from torch.utils.data import DataLoader, Dataset, random_split
 
 import pr2_reachability_map
-from pr2_reachability_map.model import FCN
-
-
-@dataclass
-class Domain:
-    lb: np.ndarray = np.array([-0.5, -1.5, 0.0, -np.pi, -np.pi, -np.pi])
-    ub: np.ndarray = np.array([1.5, 1.5, 2.0, np.pi, np.pi, np.pi])
-
-    def inside(self, x: np.ndarray) -> bool:
-        return np.all(x >= self.lb) and np.all(x <= self.ub)
-
-    def sample_point(self) -> np.ndarray:
-        return np.random.uniform(self.lb, self.ub)
+from pr2_reachability_map.model import FCN, Domain
 
 
 def create_dataset(is_rarm: bool, n_sample: int):
